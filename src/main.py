@@ -38,14 +38,11 @@ def load_yolo_model():
     model = YOLO('yolov8n.pt')  # Load the standard YOLOv8 model
     # List of bird-related classes in COCO dataset that YOLOv8 can detect
     bird_classes = [
-        'bird', 'sparrow', 'eagle', 'hawk', 'owl', 'parrot', 'pigeon', 
-        'seagull', 'woodpecker', 'crow', 'dove', 'falcon', 'flamingo', 
-        'goose', 'heron', 'hummingbird', 'kingfisher', 'magpie', 'ostrich', 
-        'peacock', 'pelican', 'penguin', 'robin', 'swan', 'turkey', 'vulture'
+        'bird', 'person'
     ]
     return model, bird_classes
 
-def send_email_with_image(image_path, confidence, bird_species):
+def send_email_with_image(image_path, confidence, detected_class):
     try:
         # Read the image file
         with open(image_path, 'rb') as f:
@@ -58,10 +55,10 @@ def send_email_with_image(image_path, confidence, bird_species):
         message = Mail(
             from_email=FROM_EMAIL,
             to_emails=TO_EMAIL,
-            subject='Bird Detected!',
+            subject=f'{detected_class.capitalize()} Detected!',
             html_content=f'''
-                <h2>Bird Detection Alert!</h2>
-                <p>A {bird_species} was detected with {confidence:.2%} confidence!</p>
+                <h2>{detected_class.capitalize()} Detection Alert!</h2>
+                <p>A {detected_class} was detected with {confidence:.2%} confidence!</p>
                 <p>Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
                 <p>Image is attached.</p>
             '''
@@ -87,35 +84,35 @@ def send_email_with_image(image_path, confidence, bird_species):
         print(f"Warning - Email sending failed: {str(e)}")
         # Continue program execution even if email fails
 
-def save_bird_image(frame, confidence, bird_species):
+def save_detected_image(frame, confidence, detected_class):
     try:
-        # Create 'bird_captures' directory if it doesn't exist
-        if not os.path.exists('bird_captures'):
-            os.makedirs('bird_captures')
+        # Create 'captures' directory if it doesn't exist
+        if not os.path.exists('captures'):
+            os.makedirs('captures')
         
         # Generate filename with timestamp and confidence
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'bird_captures/bird_{timestamp}_{confidence:.2f}.png'
+        filename = f'captures/{detected_class}_{timestamp}_{confidence:.2f}.png'
         
         # Save the image
         cv2.imwrite(filename, frame)
-        print(f"Bird image saved as: {filename}")
+        print(f"{detected_class.capitalize()} image saved as: {filename}")
         
         # Send email with the image
-        send_email_with_image(filename, confidence, bird_species)
+        send_email_with_image(filename, confidence, detected_class)
     except Exception as e:
         print(f"Warning - Image saving failed: {str(e)}")
         # Continue program execution even if saving fails
 
 def process_frames(cap):
-    model, bird_classes = load_yolo_model()
+    model, detected_classes = load_yolo_model()
     ret, frame1 = cap.read()
     ret, frame2 = cap.read()
 
-    print("Bird Detection Started - Press 'q' to quit")
-    print("Watching for birds...")
+    print("Detection Started - Press 'q' to quit")
+    print("Watching for detections...")
     
-    # To prevent multiple saves of the same bird
+    # To prevent multiple saves of the same detection
     last_save_time = 0
     save_cooldown = 120  # 2 minutes between captures
 
@@ -152,28 +149,28 @@ def process_frames(cap):
                     class_name = result.names[cls]
                     conf = float(box.conf[0])
                     
-                    # Only process if it's a bird and confidence is above 0.7
-                    if class_name in bird_classes and conf > 0.7:
+                    # Only process if it's a detected class and confidence is above 0.7
+                    if class_name in detected_classes and conf > 0.7:
                         # Get box coordinates
                         x1, y1, x2, y2 = box.xyxy[0]
                         x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
                         
-                        # Check if there's motion in the bird area
-                        bird_roi = dilated[y1:y2, x1:x2]
-                        if bird_roi.any():
-                            # Draw rectangle and label with species name
+                        # Check if there's motion in the detected area
+                        detected_roi = dilated[y1:y2, x1:x2]
+                        if detected_roi.any():
+                            # Draw rectangle and label with class name
                             label = f'{class_name}: {conf:.2f}'
                             cv2.putText(frame1, label, (x1, y1 - 10), 
                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                             
                             # Save image and send email if enough time has passed
                             if current_time - last_save_time >= save_cooldown:
-                                save_bird_image(frame1.copy(), conf, class_name)  # Pass bird species
+                                save_detected_image(frame1.copy(), conf, class_name)  # Pass detected class
                                 last_save_time = current_time
                                 print(f"{class_name} detected with {conf:.2%} confidence!")
 
             # Show the frame
-            cv2.imshow("Bird Movement Detection", frame1)
+            cv2.imshow("Movement Detection", frame1)
             frame2 = frame1.copy()  # Use a copy to avoid reference issues
 
             # Check for quit command
@@ -186,7 +183,7 @@ def process_frames(cap):
 
     cap.release()
     cv2.destroyAllWindows()
-    print("Bird Detection Stopped")
+    print("Detection Stopped")
 
 if __name__ == "__main__":
     if not SENDGRID_API_KEY or not FROM_EMAIL or not TO_EMAIL:
